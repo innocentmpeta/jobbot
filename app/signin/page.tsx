@@ -17,6 +17,9 @@ export default async function SignIn({ searchParams }: { searchParams: Promise<{
       <p className="muted small">
         Google will ask for read-only Gmail access. It's used only to read LinkedIn and SEEK job alert emails.
       </p>
+      <p className="small">
+        <a href="/privacy">Privacy policy</a> · <a href="/terms">Terms</a>
+      </p>
     </div>
   );
 }
