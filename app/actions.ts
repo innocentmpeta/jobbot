@@ -42,10 +42,20 @@ export async function saveCriteria(form: FormData) {
   revalidatePath("/profile");
 }
 
-export async function refreshNow() {
+export type RefreshResult = { ok: boolean; summary: string; notes: string[] } | null;
+
+export async function refreshNow(_prev: RefreshResult): Promise<RefreshResult> {
   const user = await requireUser();
-  await runIngest({ userIds: [user.id] });
-  revalidatePath("/matches");
+  const hasCriteria = await prisma.criteria.count({ where: { userId: user.id } });
+  if (!hasCriteria) return { ok: false, summary: "Save your criteria on the Profile page first.", notes: [] };
+  try {
+    const r = await runIngest({ userIds: [user.id] });
+    revalidatePath("/matches");
+    return { ok: true, summary: `Fetched ${r.fetched} jobs, ${r.matched} matches for you.`, notes: r.notes };
+  } catch (err) {
+    console.error("Refresh failed", err);
+    return { ok: false, summary: `Refresh failed: ${err instanceof Error ? err.message : String(err)}`, notes: [] };
+  }
 }
 
 export async function markApplied(form: FormData) {

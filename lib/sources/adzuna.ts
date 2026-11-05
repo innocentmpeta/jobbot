@@ -41,8 +41,7 @@ export async function searchAdzuna(opts: {
     cache: "no-store",
   });
   if (!res.ok) {
-    console.warn(`Adzuna ${opts.country} "${opts.what}" failed: ${res.status}`);
-    return [];
+    throw new Error(`${opts.country.toUpperCase()} "${opts.what}" returned ${res.status}: ${(await res.text()).slice(0, 150)}`);
   }
   const data = (await res.json()) as { results?: AdzunaResult[] };
 

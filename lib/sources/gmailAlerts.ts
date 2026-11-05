@@ -72,9 +72,25 @@ export function parseAlertHtml(html: string): NormalizedJob[] {
   return [...found.values()].filter((j) => j.title);
 }
 
-async function getAccessToken(userId: string): Promise<string | null> {
+/** Turns a Gmail/OAuth error response into a message you can act on. */
+async function explain(res: Response): Promise<string> {
+  const body = await res.text();
+  if (/has not been used|is disabled|SERVICE_DISABLED/i.test(body)) {
+    return "the Gmail API isn't enabled in your Google Cloud project (APIs & Services → Library → Gmail API → Enable)";
+  }
+  if (/insufficient.*scope|ACCESS_TOKEN_SCOPE_INSUFFICIENT/i.test(body)) {
+    return "Gmail permission wasn't granted. Sign out, sign in again and tick the Gmail box on Google's screen";
+  }
+  if (/invalid_grant/i.test(body)) return "Google access expired. Sign out and sign in again";
+  return `Google returned ${res.status}: ${body.slice(0, 200)}`;
+}
+
+async function getAccessToken(userId: string): Promise<string> {
   const account = await prisma.account.findFirst({ where: { userId, provider: "google" } });
-  if (!account?.refresh_token) return null;
+  if (!account?.refresh_token) throw new Error("no Google refresh token stored. Sign out and sign in again");
+  if (!account.scope?.includes("gmail.readonly")) {
+    throw new Error("Gmail permission wasn't granted. Sign out, sign in again and tick the Gmail box on Google's screen");
+  }
 
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
@@ -86,25 +102,19 @@ async function getAccessToken(userId: string): Promise<string | null> {
       grant_type: "refresh_token",
     }),
   });
-  if (!res.ok) {
-    console.warn(`Gmail token refresh failed for ${userId}: ${res.status} — sign in again to re-grant access`);
-    return null;
-  }
+  if (!res.ok) throw new Error(await explain(res));
   const data = (await res.json()) as { access_token: string };
   return data.access_token;
 }
 
+/** Throws with a readable reason when Gmail can't be read, so the UI can say why. */
 export async function fetchGmailAlerts(userId: string): Promise<NormalizedJob[]> {
   const token = await getAccessToken(userId);
-  if (!token) return [];
   const headers = { Authorization: `Bearer ${token}` };
   const api = "https://gmail.googleapis.com/gmail/v1/users/me/messages";
 
   const list = await fetch(`${api}?${new URLSearchParams({ q: ALERT_QUERY, maxResults: "25" })}`, { headers });
-  if (!list.ok) {
-    console.warn(`Gmail list failed for ${userId}: ${list.status}`);
-    return [];
-  }
+  if (!list.ok) throw new Error(await explain(list));
   const { messages = [] } = (await list.json()) as { messages?: { id: string }[] };
 
   const jobs: NormalizedJob[] = [];

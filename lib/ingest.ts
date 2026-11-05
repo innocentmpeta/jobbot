@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import { matchJob } from "@/lib/matching";
 import { searchAdzuna } from "@/lib/sources/adzuna";
-import { fetchCompanyBoards } from "@/lib/sources/boards";
+import { COMPANY_BOARDS, fetchCompanyBoards } from "@/lib/sources/boards";
 import { fetchGmailAlerts } from "@/lib/sources/gmailAlerts";
 import type { NormalizedJob } from "@/lib/sources/types";
 
@@ -18,18 +18,40 @@ export async function runIngest(opts: { userIds?: string[] } = {}) {
     include: { criteria: true },
   });
 
-  const batches: Promise<NormalizedJob[]>[] = [fetchCompanyBoards()];
+  // One line per source, shown after "Refresh now" so it's clear where jobs did or didn't come from
+  const notes: string[] = [];
+  const track = (label: string, p: Promise<NormalizedJob[]>) =>
+    p.then(
+      (jobs) => {
+        notes.push(`${label}: ${jobs.length} jobs`);
+        return jobs;
+      },
+      (err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`${label} failed: ${msg}`);
+        notes.push(`${label}: failed. ${msg}`);
+        return [] as NormalizedJob[];
+      },
+    );
+
+  const batches: Promise<NormalizedJob[]>[] = [];
+  if (COMPANY_BOARDS.length) batches.push(track("Company boards", fetchCompanyBoards()));
+  else notes.push("Company boards: none added yet (lib/sources/boards.ts)");
+  const adzunaOn = !!(process.env.ADZUNA_APP_ID && process.env.ADZUNA_APP_KEY);
+  if (!adzunaOn) notes.push("Adzuna: not set up (no API key)");
+
   for (const u of users) {
     const c = u.criteria!;
-    batches.push(fetchGmailAlerts(u.id).catch(() => []));
+    batches.push(track(`Gmail alerts (${u.email})`, fetchGmailAlerts(u.id)));
+    if (!adzunaOn) continue;
     const countries = c.countries.filter((x): x is "AU" | "NZ" => x === "AU" || x === "NZ");
+    const searches: Promise<NormalizedJob[]>[] = [];
     for (const title of c.titles.slice(0, MAX_TITLES_PER_PERSON)) {
       for (const country of countries) {
-        batches.push(
-          searchAdzuna({ country: country.toLowerCase() as "au" | "nz", what: title }).catch(() => []),
-        );
+        searches.push(searchAdzuna({ country: country.toLowerCase() as "au" | "nz", what: title }));
       }
     }
+    batches.push(track(`Adzuna (${u.email})`, Promise.all(searches).then((r) => r.flat())));
   }
   const fetched = (await Promise.all(batches)).flat();
 
@@ -60,5 +82,5 @@ export async function runIngest(opts: { userIds?: string[] } = {}) {
     }
   }
 
-  return { users: users.length, fetched: saved, matched };
+  return { users: users.length, fetched: saved, matched, notes };
 }

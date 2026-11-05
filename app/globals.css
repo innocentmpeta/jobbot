@@ -93,3 +93,7 @@ details form { margin-top: 12px; }
   padding: 8px 12px; font-size: 0.85rem; color: var(--muted); min-width: 90px;
 }
 .stat span { display: block; font-size: 1.3rem; font-weight: 700; color: var(--text); }
+.refresh { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; max-width: 100%; }
+.refresh .card { margin: 0; max-width: 480px; }
+.refresh ul { margin: 6px 0 0; padding-left: 18px; }
+button:disabled { opacity: 0.6; cursor: default; }

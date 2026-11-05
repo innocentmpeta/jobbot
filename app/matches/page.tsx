@@ -3,10 +3,13 @@ import type { MatchCategory } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { firstName, getHousehold } from "@/lib/household";
-import { dismissMatch, markApplied, refreshNow } from "@/app/actions";
+import { dismissMatch, markApplied } from "@/app/actions";
+import { RefreshButton } from "@/app/matches/RefreshButton";
 import { PersonSwitch } from "@/app/PersonSwitch";
 
 export const dynamic = "force-dynamic";
+// "Refresh now" runs the whole ingest inside this page's server action
+export const maxDuration = 60;
 
 const city = (loc?: string | null) => loc?.split(",")[0].trim() || null;
 
@@ -71,11 +74,7 @@ export default async function Matches({
     <>
       <div className="row between">
         <h1>Matches</h1>
-        {isMe && (
-          <form action={refreshNow}>
-            <button>Refresh now</button>
-          </form>
-        )}
+        {isMe && <RefreshButton />}
       </div>
 
       <PersonSwitch people={people} viewingId={viewing.id} meId={me.id} href={(id) => qs(tabKey, id)} />
